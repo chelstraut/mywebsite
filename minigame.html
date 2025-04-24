@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Emoji Pic</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <style>
+        /* Apply the game font */
+        body, button {
+            font-family: 'Press Start 2P', cursive;
+        }
+        /* Style for the canvas */
+        canvas {
+            background-color: #1a202c; /* Dark background for canvas */
+            display: block; /* Remove extra space below canvas */
+            margin-left: auto;
+            margin-right: auto;
+            border: 5px solid #4a5568; /* Grey border */
+            border-radius: 0.5rem; /* Rounded corners */
+        }
+        /* Center align text in canvas */
+        .text-center {
+            text-align: center;
+        }
+        /* Ensure buttons have good touch targets */
+        .touch-button {
+            min-width: 60px; /* Minimum width */
+            min-height: 60px; /* Minimum height */
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white flex flex-col items-center justify-center min-h-screen p-4">
+
+    <h1 class="text-4xl mb-4 text-yellow-400">Emoji Pic</h1>
+    <a href="/scratch.html">Back to Scratch Page</a>
+
+    <div id="scoreDisplay" class="text-2xl mb-4">Score: 0</div>
+
+    <div class="relative mb-4">
+         <canvas id="gameCanvas" width="320" height="320"></canvas>
+         <div id="messageOverlay" class="absolute inset-0 flex items-center justify-center bg-black bg-opacity-70 text-center text-2xl rounded-lg hidden">
+             <span id="messageText"></span>
+         </div>
+    </div>
+
+
+    <div class="mt-4 space-y-2 flex flex-col items-center">
+        <button id="btnUp" class="touch-button bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded shadow-lg transform active:scale-95">
+            ⬆️
+        </button>
+        <div class="space-x-2">
+            <button id="btnLeft" class="touch-button bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded shadow-lg transform active:scale-95">
+                ⬅️
+            </button>
+            <button id="btnRight" class="touch-button bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded shadow-lg transform active:scale-95">
+                ➡️
+            </button>
+        </div>
+        <button id="btnDown" class="touch-button bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded shadow-lg transform active:scale-95">
+            ⬇️
+        </button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreDisplay = document.getElementById('scoreDisplay');
+        const messageOverlay = document.getElementById('messageOverlay');
+        const messageText = document.getElementById('messageText');
+
+        // --- Game Configuration ---
+        const boxSize = 20; // Size of each grid square
+        const canvasSize = canvas.width; // Use canvas width
+        const initialSpeed = 200; // Milliseconds between game ticks (higher is slower)
+        const speedIncreaseFactor = 0.95; // Speed multiplier on eating food (e.g., 0.95 = 5% faster)
+        const minSpeed = 60; // Fastest speed allowed
+
+        // Emojis
+        const foodEmoji = '⚡';
+        const snakeHeadEmoji = '📸';
+        const snakeBodyEmoji = '📸'; // Using a block emoji for body
+
+        // --- Game State ---
+        let snake;
+        let food;
+        let dx; // Horizontal velocity (pixels per tick)
+        let dy; // Vertical velocity (pixels per tick)
+        let score;
+        let changingDirection; // Prevent rapid 180 degree turns within one tick
+        let gameLoopTimeout; // Use setTimeout for variable speed
+        let currentSpeed;
+        let gameActive = false; // To control game start/stop
+
+        // --- Initialization ---
+        function initializeGame() {
+            // Center the starting snake
+            const startX = Math.floor((canvasSize / boxSize) / 2) * boxSize;
+            const startY = Math.floor((canvasSize / boxSize) / 2) * boxSize;
+
+            snake = [
+                { x: startX, y: startY }, // Head
+                { x: startX - boxSize, y: startY }, // Body
+                { x: startX - (boxSize * 2), y: startY } // Tail
+            ];
+            // Initial movement direction (right)
+            dx = boxSize;
+            dy = 0;
+            score = 0;
+            currentSpeed = initialSpeed;
+            scoreDisplay.textContent = `Score: ${score}`;
+            changingDirection = false;
+            gameActive = true;
+            hideMessage(); // Ensure message overlay is hidden
+            createFood(); // Place the first food item
+            console.log("Game Initialized. Speed:", currentSpeed);
+        }
+
+        // --- Game Loop ---
+        function startGame() {
+            clearTimeout(gameLoopTimeout); // Clear any existing loop timer
+            initializeGame();
+            gameLoop(); // Start the main game loop
+        }
+
+        function gameLoop() {
+            if (!gameActive) return; // Stop the loop if game is not active
+
+            // Use setTimeout for the next tick - allows dynamic speed changes
+            gameLoopTimeout = setTimeout(() => {
+                changingDirection = false; // Allow direction change for the next tick
+                clearCanvas();
+                drawFood();
+                moveSnake(); // Move snake first
+                if (!gameActive) return; // Stop if moveSnake detected collision and ended game
+                drawSnake();
+                gameLoop(); // Schedule the next iteration
+            }, currentSpeed);
+        }
+
+        function gameOver() {
+             gameActive = false;
+             clearTimeout(gameLoopTimeout); // Stop the loop
+             console.log("Game Over! Restarting...");
+             showMessage("Hit Wall! Restarting...");
+             // Automatically restart after a short delay
+             setTimeout(() => {
+                 startGame();
+             }, 1500); // 1.5 second delay before restart
+        }
+
+        // --- Drawing Functions ---
+        function clearCanvas() {
+            // Dark background for the canvas
+            ctx.fillStyle = '#1a202c';
+            ctx.fillRect(0, 0, canvasSize, canvasSize);
+        }
+
+        function drawSnake() {
+            snake.forEach((segment, index) => {
+                const emoji = (index === 0) ? snakeHeadEmoji : snakeBodyEmoji;
+                 // Adjust font size slightly smaller than box for better fit
+                ctx.font = `${boxSize * 0.9}px Arial`; // Use Arial for broad emoji support
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                // Center the emoji within the box
+                ctx.fillText(emoji, segment.x + boxSize / 2, segment.y + boxSize / 2);
+            });
+        }
+
+        function drawFood() {
+            ctx.font = `${boxSize * 0.9}px Arial`; // Consistent size with snake
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            // Center the emoji within the box
+            ctx.fillText(foodEmoji, food.x + boxSize / 2, food.y + boxSize / 2);
+        }
+
+
+        // --- Movement & Logic ---
+        function moveSnake() {
+            // Create new head position based on current velocity (dx, dy)
+            const head = { x: snake[0].x + dx, y: snake[0].y + dy };
+
+            // --- Collision Detection ---
+            // 1. Wall Collision
+            const hitLeftWall = head.x < 0;
+            const hitRightWall = head.x >= canvasSize;
+            const hitTopWall = head.y < 0;
+            const hitBottomWall = head.y >= canvasSize;
+
+            if (hitLeftWall || hitRightWall || hitTopWall || hitBottomWall) {
+                gameOver(); // Trigger game over and restart sequence
+                return; // Stop further movement processing
+            }
+
+            // 2. Self Collision (Check if head hits any body segment)
+            // Start checking from the 4th segment because immediate turns can cause false positives
+            for (let i = 3; i < snake.length; i++) {
+                if (head.x === snake[i].x && head.y === snake[i].y) {
+                    gameOver(); // Trigger game over and restart sequence
+                    return; // Stop further movement processing
+                }
+            }
+
+            // --- Move Snake ---
+            // Add new head to the beginning of the snake array
+            snake.unshift(head);
+
+            // Check if snake ate food
+            const didEatFood = snake[0].x === food.x && snake[0].y === food.y;
+            if (didEatFood) {
+                score += 10;
+                scoreDisplay.textContent = `Score: ${score}`;
+
+                // Increase speed (make interval shorter), but not below minSpeed
+                currentSpeed = Math.max(minSpeed, currentSpeed * speedIncreaseFactor);
+                console.log("Ate food! New speed interval:", currentSpeed);
+
+                createFood(); // Generate new food
+            } else {
+                // Remove tail segment if no food was eaten
+                snake.pop();
+            }
+        }
+
+        function createFood() {
+            let foodX, foodY;
+            while (true) {
+                // Generate random coordinates aligned to the grid
+                foodX = Math.floor(Math.random() * (canvasSize / boxSize)) * boxSize;
+                foodY = Math.floor(Math.random() * (canvasSize / boxSize)) * boxSize;
+
+                // Check if the food location overlaps with the snake
+                let overlaps = snake.some(segment => segment.x === foodX && segment.y === foodY);
+                if (!overlaps) {
+                    break; // Found a valid spot
+                }
+            }
+            food = { x: foodX, y: foodY };
+        }
+
+        // --- Input Handling ---
+        function handleDirectionChange(newDx, newDy) {
+            // Prevent changing direction if already changing in this tick
+            if (changingDirection) return;
+
+            const goingUp = dy === -boxSize;
+            const goingDown = dy === boxSize;
+            const goingLeft = dx === -boxSize;
+            const goingRight = dx === boxSize;
+
+            // Prevent immediate 180-degree turns
+            if (newDx === -dx && newDy === 0 && (goingLeft || goingRight)) return;
+            if (newDy === -dy && newDx === 0 && (goingUp || goingDown)) return;
+
+
+            dx = newDx;
+            dy = newDy;
+            changingDirection = true;
+        }
+
+        function keyDownHandler(event) {
+             if (!gameActive && event.key !== 'Enter') return; // Only allow starting if inactive
+
+            switch (event.key) {
+                case 'ArrowLeft':
+                case 'a': // WASD controls
+                    handleDirectionChange(-boxSize, 0);
+                    break;
+                case 'ArrowUp':
+                case 'w':
+                    handleDirectionChange(0, -boxSize);
+                    break;
+                case 'ArrowRight':
+                case 'd':
+                    handleDirectionChange(boxSize, 0);
+                    break;
+                case 'ArrowDown':
+                case 's':
+                    handleDirectionChange(0, boxSize);
+                    break;
+                 case 'Enter':
+                    if (!gameActive) {
+                        startGame(); // Start game on Enter if not active
+                    }
+                    break;
+            }
+        }
+
+        // --- Touch Controls ---
+        document.getElementById('btnUp').addEventListener('click', () => handleDirectionChange(0, -boxSize));
+        document.getElementById('btnDown').addEventListener('click', () => handleDirectionChange(0, boxSize));
+        document.getElementById('btnLeft').addEventListener('click', () => handleDirectionChange(-boxSize, 0));
+        document.getElementById('btnRight').addEventListener('click', () => handleDirectionChange(boxSize, 0));
+
+        // --- Message Display ---
+         function showMessage(text) {
+             messageText.textContent = text;
+             messageOverlay.classList.remove('hidden');
+         }
+
+         function hideMessage() {
+             messageOverlay.classList.add('hidden');
+         }
+
+        // --- Start the Game ---
+        document.addEventListener('keydown', keyDownHandler);
+        // Initially show a start message
+        showMessage("Press Enter or Tap Controls to Start!");
+        // Don't start automatically, wait for user input
+        // startGame(); // Remove this line
+
+    </script>
+
+</body>
+</html>
